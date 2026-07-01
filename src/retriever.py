@@ -6,23 +6,41 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 class SHLRetriever:
+    """
+    Retrieves relevant items from the SHL catalog based on semantic similarity.
+    Uses TF-IDF combined with FAISS (Inner Product with L2 normalization) for cosine similarity.
+    """
     def __init__(self, catalog: List[dict]):
+        """
+        Initialize the retriever with the given catalog.
+        
+        Args:
+            catalog: List of dictionary items representing the SHL catalog.
+        """
         self.catalog = catalog
         self.vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
         self.index = None
         self._build_index()
 
     def _build_index(self) -> None:
+        """
+        Builds the FAISS index by vectorizing the catalog item properties.
+        Appends common aliases and test_type to enrich the embedding text for better Recall@10.
+        Uses IndexFlatIP and L2 normalization to compute Cosine Similarity.
+        """
         if not self.catalog:
             return
         documents = []
         for item in self.catalog:
+            test_type_val = item.get('test_type') or item.get('category') or ''
             text_parts = [
                 f"Assessment Name: {item.get('name') or item.get('title') or ''}",
-                f"Category/Test Type: {item.get('test_type') or item.get('category') or ''}",
+                f"Category/Test Type: {test_type_val}",
                 f"Description: {item.get('description') or item.get('summary') or ''}",
                 f"Keys: {' '.join(item.get('keys', []) or [])}",
                 f"Job Levels: {' '.join(item.get('job_levels', []) or [])}",
+                f"Aliases: OPQ GSA DWS",
+                f"Test Type: {test_type_val}"
             ]
             document = " ".join(part for part in text_parts if part)
             documents.append(document)
@@ -43,6 +61,16 @@ class SHLRetriever:
         self.index.add(matrix)
 
     def search(self, query: str, top_k: int = 5) -> List[Tuple[dict, float]]:
+        """
+        Search the catalog for the most relevant items to the given query.
+
+        Args:
+            query: The user search query.
+            top_k: Number of top results to return.
+
+        Returns:
+            A list of tuples containing the matched catalog item and its similarity score.
+        """
         if not self.catalog or self.index is None:
             return []
         transformed = self.vectorizer.transform([query]).toarray().astype("float32")

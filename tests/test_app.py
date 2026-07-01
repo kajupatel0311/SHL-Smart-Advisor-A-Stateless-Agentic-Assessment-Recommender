@@ -57,3 +57,23 @@ def test_alias_matching_for_common_shl_acronyms():
     assert is_match("Occupational Personality Questionnaire OPQ32r", "OPQ")
     assert is_match("Occupational Personality Questionnaire OPQ32r", "OPQ32r")
     assert is_match("Global Skills Assessment", "GSA")
+
+
+def test_chat_endpoint_returns_schema_error_payload_on_internal_failure(monkeypatch):
+    class BrokenAgent:
+        def process_chat(self, messages):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr("src.main.agent", BrokenAgent())
+    monkeypatch.setattr("src.main.retriever", object())
+
+    response = client.post(
+        "/chat",
+        json={"messages": [{"role": "user", "content": "Please help me"}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["reply"]
+    assert data["recommendations"] == []
+    assert data["end_of_conversation"] is False
