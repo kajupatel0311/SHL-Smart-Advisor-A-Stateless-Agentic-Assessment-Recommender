@@ -97,3 +97,14 @@ def list_catalog() -> List[dict]:
     if not catalog_path.exists():
         scrape_catalog(catalog_path)
     return load_catalog(catalog_path)
+
+@app.get("/test-models")
+def test_models():
+    """Diagnostic endpoint to check which Gemini models the API key has access to."""
+    import google.generativeai as genai
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    try:
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        return {"available_models": models}
+    except Exception as e:
+        return {"error": str(e)}
