@@ -27,7 +27,7 @@ class RecommendationAgent:
         self.retriever = retriever
         # Initialize the model with the system instruction
         self.model = genai.GenerativeModel(
-            model_name="gemini-1.5-pro",
+            model_name="gemini-flash-latest",
             system_instruction=(
                 "You are an expert SHL Assessment Recommender. "
                 "1. If the user is vague, ask a clarifying question. "
