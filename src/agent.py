@@ -1,23 +1,21 @@
-import json
 import os
+import json
+import google.generativeai as genai
 from typing import List, Tuple
-
+from src.retriever import SHLRetriever
 from dotenv import load_dotenv
 
 load_dotenv()
 
-try:
-    from openai import OpenAI
-except Exception:  # pragma: no cover - optional dependency
-    OpenAI = None
-
+# Configure Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 class RecommendationAgent:
     """
     Agent responsible for processing user queries and generating recommendations
-    based on retrieved catalog data using OpenAI's models.
+    based on retrieved catalog data using Google's Gemini models.
     """
-    def __init__(self, catalog: List[dict], retriever) -> None:
+    def __init__(self, catalog: List[dict], retriever: SHLRetriever):
         """
         Initialize the agent with the catalog and retriever.
         
@@ -27,31 +25,24 @@ class RecommendationAgent:
         """
         self.catalog = catalog
         self.retriever = retriever
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if OpenAI and os.getenv("OPENAI_API_KEY") else None
-        self.system_prompt = """
-        You are a Consultative SHL Advisor. Your goal is to guide users to the best SHL assessments.
-        Follow these strict rules:
-        - Clarify: If the conversation turn count is < 3 and the user's intent is vague, ask exactly one targeted follow-up question.
-        - Refine: If a user mentions a new constraint (e.g., "only personality"), use the retrieved search results to filter current recommendations.
-        - Compare: When comparing products, use a bulleted list based ONLY on the retrieved 'description' fields.
-        - Strict Grounding: Never mention a product or URL not present in the provided context. Every URL must start with 'https://www.shl.com/'.
-        - Set end_of_conversation to true only after a recommendation has been made AND the user has no further clarifying requests (i.e. they are satisfied).
-        - Do not provide general hiring advice outside the scope of the catalog.
-        """
-
-    def build_system_prompt(self) -> str:
-        """Returns the base system prompt."""
-        return self.system_prompt
+        # Initialize the model with the system instruction
+        self.model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=(
+                "You are an expert SHL Assessment Recommender. "
+                "1. If the user is vague, ask a clarifying question. "
+                "2. Recommend 1-10 assessments ONLY from the provided catalog data. "
+                "3. If the user edits constraints, update the list. "
+                "4. Compare tests accurately using catalog data. "
+                "5. Refuse general hiring/legal advice. "
+                "6. ALWAYS return a JSON object with keys: 'reply', 'recommendations', and 'end_of_conversation'."
+            )
+        )
 
     def route_query(self, query: str) -> str:
         """
         Determines the theme of the query based on keyword matching.
-        
-        Args:
-            query: User's query string.
-            
-        Returns:
-            The theme of the query (e.g. leadership, communication, analytics, general).
+        Preserved for logging compatibility in main.py.
         """
         lowered = query.lower()
         if any(keyword in lowered for keyword in ["lead", "manager", "coach", "team", "people"]):
@@ -62,98 +53,33 @@ class RecommendationAgent:
             return "analytics"
         return "general"
 
-    def process_chat(self, messages: List[dict]) -> dict:
+    def process_chat(self, messages: list) -> dict:
         """
         Processes a chat conversation and returns the agent's response.
-        Retrieves context based on the latest message and formats the prompt for the OpenAI model.
-        
-        Args:
-            messages: List of message dictionaries representing the conversation history.
-            
-        Returns:
-            A dictionary matching the expected schema for the API response.
+        Retrieves context based on the latest message and formats the prompt for Gemini.
         """
-        latest_message = messages[-1]["content"] if messages else ""
-        results = self.retriever.search(latest_message, top_k=10)
-        retrieved_context = {
-            "role": "system",
-            "content": f"Retrieved Catalog Data: {json.dumps(results)}. Only recommend from this list.",
-        }
-        prompt_messages = [{"role": "system", "content": self.system_prompt}] + messages + [retrieved_context]
+        # Get the latest query for RAG
+        latest_query = messages[-1]['content'] if messages else ""
+        retrieved_data = self.retriever.search(latest_query, top_k=10)
+        
+        # Build the prompt with retrieved context
+        context_str = f"CATALOG DATA: {json.dumps(retrieved_data)}"
+        prompt = f"Context: {context_str}\n\nHistory: {json.dumps(messages)}\n\nResponse:"
 
-        if self.client is not None:
-            try:
-                response = self.client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=prompt_messages,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "shl_recommender_response",
-                            "strict": True,
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "reply": {"type": "string"},
-                                    "recommendations": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "name": {"type": "string"},
-                                                "url": {"type": "string"},
-                                                "test_type": {"type": "string"},
-                                            },
-                                            "required": ["name", "url", "test_type"],
-                                            "additionalProperties": False,
-                                        },
-                                    },
-                                    "end_of_conversation": {"type": "boolean"},
-                                },
-                                "required": ["reply", "recommendations", "end_of_conversation"],
-                                "additionalProperties": False,
-                            },
-                        },
-                    },
+        try:
+            # Call Gemini with JSON constrained output
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json",
                 )
-                return json.loads(response.choices[0].message.content)
-            except Exception:
-                pass
-
-        reply = f"I can help narrow this down. Based on your latest message, I would focus on the most relevant SHL options from the catalog."
-        recommendations = []
-        for item, _ in results[:3]:
-            recommendations.append(
-                {
-                    "name": item.get("name") or item.get("title") or "Unnamed item",
-                    "url": item.get("link") or item.get("url") or "",
-                    "test_type": item.get("test_type") or item.get("keys", ["General"])[0] or "General",
-                }
             )
-
-        return {
-            "reply": reply,
-            "recommendations": recommendations,
-            "end_of_conversation": False,
-        }
-
-    def respond(self, query: str, results: List[Tuple[dict, float]]) -> str:
-        """
-        Fallback response generator when OpenAI is unavailable.
-        
-        Args:
-            query: The user's query string.
-            results: List of retrieved catalog items and their scores.
-            
-        Returns:
-            A simple text response based on the top result.
-        """
-        mode = self.route_query(query)
-        if not results:
-            return f"I could not find a strong match for '{query}'."
-        top_item = results[0][0]
-        title = top_item.get("title") or top_item.get("name") or "the top matching product"
-        return (
-            f"For your request, I would prioritize {title} because it aligns with the "
-            f"{mode} theme of '{query}'."
-        )
+            # Parse the JSON string from Gemini
+            return json.loads(response.text)
+        except Exception as e:
+            # Fallback if JSON parsing or generation fails
+            return {
+                "reply": f"I'm sorry, I encountered an error processing that request: {str(e)}",
+                "recommendations": [],
+                "end_of_conversation": False
+            }
