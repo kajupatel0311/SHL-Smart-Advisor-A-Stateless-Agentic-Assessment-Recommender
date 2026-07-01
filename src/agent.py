@@ -35,7 +35,8 @@ class RecommendationAgent:
                 "3. If the user edits constraints, update the list. "
                 "4. Compare tests accurately using catalog data. "
                 "5. Refuse general hiring/legal advice. "
-                "6. ALWAYS return a JSON object with keys: 'reply', 'recommendations', and 'end_of_conversation'."
+                "6. ALWAYS return a JSON object with EXACTLY this schema, with no extra fields: "
+                '{"reply": "string", "recommendations": [{"name": "string", "url": "https://www.shl.com/...", "test_type": "string"}], "end_of_conversation": true/false}'
             )
         )
 
