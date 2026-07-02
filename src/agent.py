@@ -15,6 +15,7 @@ class RecommendationAgent:
     def __init__(self, catalog: List[dict], retriever: SHLRetriever):
         """
         Initialize the agent with the catalog and retriever.
+        """
         self.catalog = catalog
         self.retriever = retriever
         
