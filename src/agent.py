@@ -15,10 +15,20 @@ class RecommendationAgent:
     def __init__(self, catalog: List[dict], retriever: SHLRetriever):
         """
         Initialize the agent with the catalog and retriever.
-        """
         self.catalog = catalog
         self.retriever = retriever
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # Support Groq as a free alternative, fallback to OpenAI
+        if os.getenv("GROQ_API_KEY"):
+            self.client = OpenAI(
+                api_key=os.getenv("GROQ_API_KEY"),
+                base_url="https://api.groq.com/openai/v1"
+            )
+            self.model_name = "llama-3.1-8b-instant" # Fast, free model on Groq
+        else:
+            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            self.model_name = "gpt-4o-mini"
+            
         self.system_instruction = (
             "You are an expert SHL Assessment Recommender. "
             "1. If the user is vague, ask a clarifying question. "
@@ -86,7 +96,7 @@ class RecommendationAgent:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model_name,
                 messages=api_messages,
                 response_format={"type": "json_object"}
             )
