@@ -4,7 +4,7 @@ import requests
 
 
 def main() -> None:
-    url = "http://127.0.0.1:8000/chat"
+    url = "https://shl-smart-advisor-a-stateless-agentic.onrender.com/chat"
     payload = {
         "messages": [
             {"role": "user", "content": "I am hiring a Java developer who works with stakeholders"},

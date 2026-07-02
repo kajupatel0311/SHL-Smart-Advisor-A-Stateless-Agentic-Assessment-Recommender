@@ -6,7 +6,7 @@ from typing import List
 import requests
 
 TRACES_DIR = Path("conversations/GenAI_SampleConversations")
-API_URL = "http://127.0.0.1:8000/chat"
+API_URL = "https://shl-smart-advisor-a-stateless-agentic.onrender.com/chat"
 ALIASES = {
     "opq": ["occupational personality questionnaire", "opq32r", "opq32"],
     "gsa": ["global skills assessment"],
@@ -116,9 +116,9 @@ def run_evaluation() -> None:
         payload = {"messages": messages}
 
         try:
-            response = requests.post(API_URL, json=payload, timeout=30)
+            response = requests.post(API_URL, json=payload, timeout=120)
             if response.status_code != 200:
-                print(f"  ✗ Server Error {response.status_code}: {response.text}")
+                print(f"  [FAIL] Server Error {response.status_code}: {response.text}")
                 continue
 
             data = response.json()
@@ -139,10 +139,14 @@ def run_evaluation() -> None:
             if data.get("end_of_conversation") is expected_state and (expected_state or data.get("recommendations")):
                 behavior_passes += 1
 
-            print(f"  ✓ Schema Valid | Recall@10: {recall:.2f} | Behavior: {data.get('end_of_conversation')}")
+            print(f"  [PASS] Schema Valid | Recall@10: {recall:.2f} | Behavior: {data.get('end_of_conversation')}")
             print(f"  Agent Reply: {data.get('reply', '')[:80]}...\n")
         except Exception as exc:
-            print(f"  ✗ Test Failed: {exc}")
+            print(f"  [FAIL] Test Failed: {exc}")
+        
+        # Add a sleep to prevent hitting Gemini's free tier rate limits (429 errors)
+        import time
+        time.sleep(5)
 
     print("=== FINAL LOCAL EVALUATION REPORT ===")
     print(f"Total Traces Processed: {trace_count}")
