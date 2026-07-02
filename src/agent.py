@@ -86,7 +86,9 @@ class RecommendationAgent:
 
     def process_chat(self, messages: list) -> dict:
         """Processes a chat conversation and returns the agent's response."""
-        latest_query = messages[-1]['content'] if messages else ""
+        # Combine all user messages to ensure we don't lose context from previous turns (e.g. initial job role)
+        user_messages = [msg['content'] for msg in messages if msg['role'] == 'user']
+        latest_query = " ".join(user_messages) if user_messages else ""
         retrieved_data = self.retriever.search(latest_query, top_k=10)
         
         context_str = f"CATALOG DATA: {json.dumps(retrieved_data)}"
